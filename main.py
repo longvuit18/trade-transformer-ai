@@ -10,31 +10,42 @@ data = pd.read_csv('normalized-data.csv')
 
 # Chuẩn hóa dữ liệu vào khoảng [0, 1]
 scaler = MinMaxScaler(feature_range=(0, 1))
-scaled_data = scaler.fit_transform(data[['close', 'ema2', 'ema9', 'ema25', 'ema97', 'volume']].values)
+scaled_data = scaler.fit_transform(
+    data[['close', 'ema2', 'ema9', 'ema25', 'ema97', 'volume']].values)
 
 # Chia dữ liệu thành tập huấn luyện và tập kiểm tra
 train_data = scaled_data[:800]
 test_data = scaled_data[800:]
 
 # Hàm tạo batch từ dữ liệu chuỗi thời gian
-def create_sequences(data, seq_length, key):
-    
-    close = []
-    ema2 = []
-    ema9 = []
-    ema25 = []
-    ema97 = []
-    volume = []
-    for i in range(len(data) - seq_length):
-        print()
+
+
+def create_sequences(data, seq_length, output_length = 92):
+    sequences = []
+    for i in range(len(data) - seq_length - output_length):
         sequence = data[i:i + seq_length]
+        closeList = []
+        ema2List = []
+        ema9List = []
+        ema25List = []
+        ema97List = []
+        volumeList = []
+        ema2ListOutput = []
         for k in range(len(sequence)):
-            close = 
-        target = data[i + seq_length][1]
-        sequences.append((sequence, target))
+            closeList.append(sequence[k][0])
+            ema2List.append(sequence[k][1])
+            ema9List.append(sequence[k][2])
+            ema25List.append(sequence[k][3])
+            ema97List.append(sequence[k][4])
+            volumeList.append(sequence[k][5])
+        input_matrix = np.stack([closeList, ema9List, ema25List, ema97List, volumeList], axis=1)
+        for k in range(i + seq_length, i + seq_length + output_length):
+            ema2ListOutput.append(data[k][1])
+        sequences.append((input_matrix, ema2ListOutput))
     return sequences
 
 # Định nghĩa kiến trúc mô hình Transformer
+
 class Transformer(nn.Module):
     def __init__(self, input_dim, d_model, nhead, num_layers):
         super(Transformer, self).__init__()
@@ -44,9 +55,11 @@ class Transformer(nn.Module):
         self.decoder = nn.Linear(d_model, 1)
 
     def forward(self, x):
-        x = self.encoder(x.transpose(0, 1))  # Chuyển vị x trước khi đưa vào encoder
+        # Chuyển vị x trước khi đưa vào encoder
+        x = self.encoder(x.transpose(0, 1))
         x = self.decoder(x[-1])  # Dự đoán trường 'close' từ kết quả cuối cùng
         return x
+
 
 # Cài đặt các siêu tham số
 input_dim = 1  # Độ dài của chuỗi đầu vào (giá trị Bitcoin)
@@ -60,11 +73,17 @@ optimizer = optim.Adam(model.parameters(), lr=0.001)
 criterion = nn.MSELoss()
 
 # Chuyển đổi dữ liệu huấn luyện và tạo batch
-train_sequences = create_sequences(train_data, seq_length=32)
-train_inputs = torch.tensor([seq for seq, _ in train_sequences], dtype=torch.float32)
-train_targets = torch.tensor([target for _, target in train_sequences], dtype=torch.float32)
-train_dataset = torch.utils.data.TensorDataset(train_inputs.transpose(1, 2), train_targets)  # Chuyển vị train_inputs
-train_loader = torch.utils.data.DataLoader(train_dataset, batch_size=64, shuffle=True)
+train_sequences = create_sequences(train_data, seq_length=644)
+# print(train_sequences[0])
+
+train_inputs = torch.tensor(
+    np.array([seq for seq, _ in train_sequences]), dtype=torch.float32)
+train_targets = torch.tensor(
+    np.array([target for _, target in train_sequences]), dtype=torch.float32)
+train_dataset = torch.utils.data.TensorDataset(
+    train_inputs.transpose(1, 2), train_targets)  # Chuyển vị train_inputs
+train_loader = torch.utils.data.DataLoader(
+    train_dataset, batch_size=64, shuffle=True)
 
 
 # Huấn luyện mô hình
